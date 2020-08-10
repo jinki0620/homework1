@@ -1,44 +1,64 @@
 from flask import Flask, render_template, jsonify, request
+import requests
+from bs4 import BeautifulSoup
+from pymongo import MongoClient  # pymongo를 임포트 하기(패키지 인스톨 먼저 해야겠죠?)
 
 app = Flask(__name__)
 
-from pymongo import MongoClient
-
-client = MongoClient('localhost', 27017)
-db = client.dbnewhomework
+client = MongoClient('localhost', 27017)  # mongoDB는 27017 포트로 돌아갑니다.
+db = client.dbsparta_ninework  # 'dbsparta'라는 이름의 db를 만들거나 사용합니다.
 
 
-## HTML 화면 보기
 @app.route('/')
-def homework():
+def home():
     return render_template('index.html')
 
 
-# 주문하기(POST) API
-@app.route('/order', methods=['POST'])
-def save_order():
-    name_receive = request.form['name']
-    count_receive = request.form['count']
-    address_receive = request.form['address']
-    phone_receive = request.form['phone']
+@app.route('/memo', methods=['POST'])
+def post_article():
+    # 1. 클라이언트로부터 데이터를 받기
+    url_receive = request.form['url_give']  # 클라이언트로부터 url을 받는 부분
+    comment_receive = request.form['comment_give']  # 클라이언트로부터 comment를 받는 부분
 
-    doc = {
-        'name': name_receive,
-        'count': count_receive,
-        'address': address_receive,
-        'phone': phone_receive
-    }
+    # 2. meta tag를 스크래핑하기
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.86 Safari/537.36'}
+    data = requests.get(url_receive, headers=headers)
+    soup = BeautifulSoup(data.text, 'html.parser')
 
-    db.homework.insert_one(doc)
+    og_image = soup.select_one('meta[property="og:image"]')
+    og_title = soup.select_one('meta[property="og:title"]')
+    og_description = soup.select_one('meta[property="og:description"]')
+    og_director = soup.select_one('#content > div.article > div.mv_info_area > div.mv_info > dl > dd:nth-child(4) > p > a').text
+    print(soup.select_one('#content > div.article > div.mv_info_area > div.mv_info > dl > dd:nth-child(4) > p > a').text)
+
+    print("@@@@@@@@@@@@")
+    print(og_title)
+    print(og_description)
+    print(og_director)
+
+    # content > div.article > div.mv_info_area > div.mv_info > dl > dd:nth-child(4) > p > a
+
+    url_title = og_title['content']
+    url_description = og_description['content']
+    url_image = og_image['content']
+    url_director =og_director
+
+    article = {'url': url_receive, 'title': url_title, 'desc': url_description, 'image': url_image,
+               'comment': comment_receive , 'director' : url_director}
+
+    # 3. mongoDB에 데이터를 넣기
+    db.articles.insert_one(article)
 
     return jsonify({'result': 'success'})
 
 
-# 주문 목록보기(Read) API
-@app.route('/order', methods=['GET'])
-def view_orders():
-    orders = list(db.homework.find({}, {'_id': 0}))
-    return jsonify({'result': 'success', 'orders': orders})
+@app.route('/memo', methods=['GET'])
+def read_articles():
+    # 1. mongoDB에서 _id 값을 제외한 모든 데이터 조회해오기 (Read)
+    result = list(db.articles.find({}, {'_id': 0}))
+    # 2. articles라는 키 값으로 article 정보 보내주기
+    return jsonify({'result': 'success', 'articles': result})
 
 
 if __name__ == '__main__':
